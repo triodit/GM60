@@ -45,12 +45,12 @@ class GM60BarcodeReader:
 
         # Baud Rate Configuration
         ttk.Label(self.config_frame, text="Set Baud Rate:").grid(row=1, column=0, padx=5, pady=5)
-        self.baud_rate_combobox = ttk.Combobox(self.config_frame, values=["9600", "19200", "38400", "57600", "115200"], state="readonly")
+        self.baud_rate_combobox = ttk.Combobox(self.config_frame, values=["1200", "4800", "9600", "14400", "19200", "38400", "57600", "115200"], state="readonly")
         self.baud_rate_combobox.grid(row=1, column=1, padx=5, pady=5)
 
         # LED Configuration
         ttk.Label(self.config_frame, text="Set LED Mode:").grid(row=2, column=0, padx=5, pady=5)
-        self.led_mode_combobox = ttk.Combobox(self.config_frame, values=["Normal", "Normally On", "Off"], state="readonly")
+        self.led_mode_combobox = ttk.Combobox(self.config_frame, values=["Breathing Lamp", "Decoding Successful Prompt Light"], state="readonly")
         self.led_mode_combobox.grid(row=2, column=1, padx=5, pady=5)
 
         # LED Brightness Configuration
@@ -58,9 +58,14 @@ class GM60BarcodeReader:
         self.led_brightness_combobox = ttk.Combobox(self.config_frame, values=["Low", "Middle", "High"], state="readonly")
         self.led_brightness_combobox.grid(row=3, column=1, padx=5, pady=5)
 
+        # Color Configuration
+        ttk.Label(self.config_frame, text="Set Color Mode:").grid(row=4, column=0, padx=5, pady=5)
+        self.color_mode_combobox = ttk.Combobox(self.config_frame, values=["Red", "Green", "Blue"], state="readonly")
+        self.color_mode_combobox.grid(row=4, column=1, padx=5, pady=5)
+
         # Set Configuration Button
         self.set_button = ttk.Button(self.config_frame, text="Set Configuration", command=self.set_configuration)
-        self.set_button.grid(row=4, column=0, columnspan=2, padx=5, pady=5)
+        self.set_button.grid(row=5, column=0, columnspan=2, padx=5, pady=5)
         
     def get_serial_ports(self):
         """Returns a list of available COM ports."""
@@ -72,43 +77,48 @@ class GM60BarcodeReader:
         selected_port = self.combobox.get()
         if selected_port:
             try:
-                self.ser = serial.Serial(selected_port, 57600, timeout=1)  # 57600 is the default baud rate
+                self.ser = serial.Serial(selected_port, 57600, timeout=1)  # Default baud rate is 57600
                 self.update_current_state()
             except serial.SerialException as e:
                 messagebox.showerror("Connection Error", f"Failed to connect to {selected_port}\n{e}")
                 self.ser = None
     
-    def send_command(self, command):
+    def send_command(self, command_bytes):
         """Send command to the barcode reader and return the response."""
         try:
-            self.ser.write((command + '\r\n').encode())
-            response = self.ser.read(100).decode().strip()
+            self.ser.write(command_bytes)
+            response = self.ser.read(100)
             return response
         except Exception as e:
             messagebox.showerror("Communication Error", f"Failed to send command: {e}")
-            return ""
+            return b""
 
     def update_current_state(self):
         """Retrieve and display the current state of the device."""
-        # Placeholder for the actual command to get the read mode
-        read_mode = self.send_command("VAL1?")  # Replace with the correct command to get the current read mode
-        if read_mode == "02":
+        # Example command to get read mode (replace with actual command as needed)
+        read_mode_command = bytes([0x7E, 0x00, 0x07, 0x01, 0x00, 0x0A, 0x01, 0xEE, 0x8A])
+        read_mode_response = self.send_command(read_mode_command)
+
+        # Check response and update the read mode label accordingly
+        if read_mode_response == bytes([0x02, 0x00, 0x00, 0x01, 0x3E, 0xE4, 0xAC]):
             self.read_mode_label.config(text="Continuous Mode")
-        elif read_mode == "03":
+        elif read_mode_response == bytes([0x02, 0x00, 0x00, 0x01, 0x3F, 0xE4, 0xAD]):
             self.read_mode_label.config(text="Induction Mode")
         else:
             self.read_mode_label.config(text="Unknown Mode")
         
-        # Placeholder for the actual command to get the baud rate
-        baud_rate = self.send_command("BAUD?")  # Replace with the correct command to get the current baud rate
+        # Example command to get baud rate (replace with actual command as needed)
+        baud_rate_command = bytes([0x7E, 0x00, 0x07, 0x01, 0x00, 0x0A, 0x02, 0xEE, 0x8B])
+        baud_rate_response = self.send_command(baud_rate_command)
+
         baud_rate_mapping = {
-            "9600": "9600",
-            "19200": "19200",
-            "38400": "38400",
-            "57600": "57600",
-            "115200": "115200"
+            bytes([0x02, 0x00, 0x00, 0x01, 0xA0, 0xE5, 0xBA]): "1200",
+            bytes([0x02, 0x00, 0x00, 0x01, 0xA1, 0xE5, 0xBB]): "4800",
+            bytes([0x02, 0x00, 0x00, 0x01, 0xA2, 0xE5, 0xBC]): "9600",
+            # Add more mappings as needed
         }
-        self.baud_rate_label.config(text=baud_rate_mapping.get(baud_rate, "Unknown Baud Rate"))
+
+        self.baud_rate_label.config(text=baud_rate_mapping.get(baud_rate_response, "Unknown Baud Rate"))
     
     def set_configuration(self):
         """Set the configuration based on the dropdown selections."""
@@ -116,43 +126,57 @@ class GM60BarcodeReader:
         selected_baud_rate = self.baud_rate_combobox.get()
         selected_led_mode = self.led_mode_combobox.get()
         selected_led_brightness = self.led_brightness_combobox.get()
+        selected_color_mode = self.color_mode_combobox.get()
         
+        # Set Read Mode
         if selected_mode == "Continuous Mode":
-            mode_command = "SET 02"  # Replace with the correct command for Continuous Mode
+            mode_command = bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x01, 0x00, 0xEF])
         elif selected_mode == "Induction Mode":
-            mode_command = "SET 03"  # Replace with the correct command for Induction Mode
+            mode_command = bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x01, 0x01, 0xF0])
         else:
             messagebox.showerror("Configuration Error", "Invalid mode selected.")
             return
 
-        if selected_baud_rate:
-            baud_command = f"SET BAUD {selected_baud_rate}"  # Replace with the correct command to set baud rate
+        # Set Baud Rate
+        baud_rate_commands = {
+            "1200": bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x02, 0x00, 0xF0]),
+            "4800": bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x02, 0x01, 0xF1]),
+            "9600": bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x02, 0x02, 0xF2]),
+            # Add more as needed
+        }
+        baud_command = baud_rate_commands.get(selected_baud_rate)
 
-        if selected_led_mode == "Normal":
-            led_command = "SET LED 01"  # Replace with the correct command for Normal LED mode
-        elif selected_led_mode == "Normally On":
-            led_command = "SET LED 02"  # Replace with the correct command for Normally On LED mode
-        elif selected_led_mode == "Off":
-            led_command = "SET LED 00"  # Replace with the correct command to turn off LED
+        # Set LED Mode
+        if selected_led_mode == "Breathing Lamp":
+            led_command = bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x03, 0x00, 0xF1])
+        elif selected_led_mode == "Decoding Successful Prompt Light":
+            led_command = bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x03, 0x01, 0xF2])
         else:
             messagebox.showerror("Configuration Error", "Invalid LED mode selected.")
             return
 
-        if selected_led_brightness == "Low":
-            brightness_command = "SET BRIGHT 01"  # Replace with the correct command for Low brightness
-        elif selected_led_brightness == "Middle":
-            brightness_command = "SET BRIGHT 50"  # Replace with the correct command for Middle brightness
-        elif selected_led_brightness == "High":
-            brightness_command = "SET BRIGHT 99"  # Replace with the correct command for High brightness
-        else:
-            messagebox.showerror("Configuration Error", "Invalid LED brightness selected.")
-            return
+        # Set LED Brightness
+        brightness_commands = {
+            "Low": bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x04, 0x00, 0xF3]),
+            "Middle": bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x04, 0x01, 0xF4]),
+            "High": bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x04, 0x02, 0xF5]),
+        }
+        brightness_command = brightness_commands.get(selected_led_brightness)
+
+        # Set Color Mode
+        color_commands = {
+            "Red": bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x05, 0x00, 0xF6]),
+            "Green": bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x05, 0x01, 0xF7]),
+            "Blue": bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x05, 0x02, 0xF8]),
+        }
+        color_command = color_commands.get(selected_color_mode)
 
         # Send commands
         self.send_command(mode_command)
         self.send_command(baud_command)
         self.send_command(led_command)
         self.send_command(brightness_command)
+        self.send_command(color_command)
         
         messagebox.showinfo("Configuration", "Configuration set successfully.")
         self.update_current_state()
