@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import serial
 import serial.tools.list_ports
+import time
 
 class GM60BarcodeReader:
     def __init__(self, master):
@@ -103,7 +104,8 @@ class GM60BarcodeReader:
 
         for baud_rate in self.baud_rates:
             try:
-                self.ser = serial.Serial(selected_port, int(baud_rate), timeout=1)
+                self.ser = serial.Serial(selected_port, int(baud_rate), timeout=2)  # Increased timeout
+                time.sleep(1)  # Add a short delay to ensure the device is ready
                 if self.test_connection():
                     self.baud_rate_label.config(text=baud_rate)
                     messagebox.showinfo("Connection Success", f"Connected successfully at {baud_rate} baud.")
@@ -119,7 +121,7 @@ class GM60BarcodeReader:
         """Test the connection by sending a command and checking the response."""
         read_mode_command = bytes([0x7E, 0x00, 0x07, 0x01, 0x00, 0x0A, 0x01, 0xEE, 0x8A])
         response = self.send_command(read_mode_command)
-        return response.startswith(bytes([0x02]))  # Example check for a valid response
+        return len(response) > 0  # Valid if any response is received
 
     def send_command(self, command_bytes):
         """Send command to the barcode reader and return the response."""
@@ -138,56 +140,61 @@ class GM60BarcodeReader:
         read_mode_response = self.send_command(read_mode_command)
 
         # Check response and update the read mode label accordingly
-        if read_mode_response == bytes([0x02, 0x00, 0x00, 0x01, 0x3E, 0xE4, 0xAC]):
-            self.read_mode_label.config(text="Continuous Mode")
-        elif read_mode_response == bytes([0x02, 0x00, 0x00, 0x01, 0x3F, 0xE4, 0xAD]):
-            self.read_mode_label.config(text="Induction Mode")
-        else:
-            self.read_mode_label.config(text="Unknown Mode")
+        if read_mode_response:
+            if read_mode_response[4] == 0x3E:
+                self.read_mode_label.config(text="Continuous Mode")
+            elif read_mode_response[4] == 0x3F:
+                self.read_mode_label.config(text="Induction Mode")
+            else:
+                self.read_mode_label.config(text="Unknown Mode")
         
         # Example command to get baud rate (replace with actual command as needed)
         baud_rate_command = bytes([0x7E, 0x00, 0x07, 0x01, 0x00, 0x0A, 0x02, 0xEE, 0x8B])
         baud_rate_response = self.send_command(baud_rate_command)
 
-        baud_rate_mapping = {
-            bytes([0x02, 0x00, 0x00, 0x01, 0xA0, 0xE5, 0xBA]): "1200",
-            bytes([0x02, 0x00, 0x00, 0x01, 0xA1, 0xE5, 0xBB]): "4800",
-            bytes([0x02, 0x00, 0x00, 0x01, 0xA2, 0xE5, 0xBC]): "9600",
-            # Add more mappings as needed
-        }
-        self.baud_rate_label.config(text=baud_rate_mapping.get(baud_rate_response, "Unknown Baud Rate"))
+        if baud_rate_response:
+            baud_rate_mapping = {
+                0xA0: "1200",
+                0xA1: "4800",
+                0xA2: "9600",
+                # Add more mappings as needed
+            }
+            self.baud_rate_label.config(text=baud_rate_mapping.get(baud_rate_response[4], "Unknown Baud Rate"))
 
         # Example command to get LED mode (replace with actual command as needed)
         led_mode_command = bytes([0x7E, 0x00, 0x07, 0x01, 0x00, 0x0A, 0x03, 0xEE, 0x8C])
         led_mode_response = self.send_command(led_mode_command)
 
-        led_mode_mapping = {
-            bytes([0x02, 0x00, 0x00, 0x01, 0xB0, 0xE5, 0xC0]): "Breathing Lamp",
-            bytes([0x02, 0x00, 0x00, 0x01, 0xB1, 0xE5, 0xC1]): "Decoding Successful Prompt Light",
-        }
-        self.led_mode_label.config(text=led_mode_mapping.get(led_mode_response, "Unknown LED Mode"))
+        if led_mode_response:
+            led_mode_mapping = {
+                0xB0: "Breathing Lamp",
+                0xB1: "Decoding Successful Prompt Light",
+            }
+            self.led_mode_label.config(text=led_mode_mapping.get(led_mode_response[4], "Unknown LED Mode"))
 
         # Example command to get LED brightness (replace with actual command as needed)
         led_brightness_command = bytes([0x7E, 0x00, 0x07, 0x01, 0x00, 0x0A, 0x04, 0xEE, 0x8D])
         led_brightness_response = self.send_command(led_brightness_command)
 
-        led_brightness_mapping = {
-            bytes([0x02, 0x00, 0x00, 0x01, 0xC0, 0xE6, 0xD0]): "Low",
-            bytes([0x02, 0x00, 0x00, 0x01, 0xC1, 0xE6, 0xD1]): "Middle",
-            bytes([0x02, 0x00, 0x00, 0x01, 0xC2, 0xE6, 0xD2]): "High",
-        }
-        self.led_brightness_label.config(text=led_brightness_mapping.get(led_brightness_response, "Unknown LED Brightness"))
+        if led_brightness_response:
+            led_brightness_mapping = {
+                0xC0: "Low",
+                0xC1: "Middle",
+                0xC2: "High",
+            }
+            self.led_brightness_label.config(text=led_brightness_mapping.get(led_brightness_response[4], "Unknown LED Brightness"))
 
         # Example command to get color mode (replace with actual command as needed)
         color_mode_command = bytes([0x7E, 0x00, 0x07, 0x01, 0x00, 0x0A, 0x05, 0xEE, 0x8E])
         color_mode_response = self.send_command(color_mode_command)
 
-        color_mode_mapping = {
-            bytes([0x02, 0x00, 0x00, 0x01, 0xD0, 0xE6, 0xE0]): "Red",
-            bytes([0x02, 0x00, 0x00, 0x01, 0xD1, 0xE6, 0xE1]): "Green",
-            bytes([0x02, 0x00, 0x00, 0x01, 0xD2, 0xE6, 0xE2]): "Blue",
-        }
-        self.color_mode_label.config(text=color_mode_mapping.get(color_mode_response, "Unknown Color Mode"))
+        if color_mode_response:
+            color_mode_mapping = {
+                0xD0: "Red",
+                0xD1: "Green",
+                0xD2: "Blue",
+            }
+            self.color_mode_label.config(text=color_mode_mapping.get(color_mode_response[4], "Unknown Color Mode"))
     
     def set_configuration(self):
         """Set the configuration based on the dropdown selections."""
@@ -199,44 +206,44 @@ class GM60BarcodeReader:
         
         # Set Read Mode
         if selected_mode == "Continuous Mode":
-            mode_command = bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x01, 0x00, 0xEF])
+            mode_command = bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x01, 0x00])
         elif selected_mode == "Induction Mode":
-            mode_command = bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x01, 0x01, 0xF0])
+            mode_command = bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x01, 0x01])
         else:
             messagebox.showerror("Configuration Error", "Invalid mode selected.")
             return
 
         # Set Baud Rate
         baud_rate_commands = {
-            "1200": bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x02, 0x00, 0xF0]),
-            "4800": bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x02, 0x01, 0xF1]),
-            "9600": bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x02, 0x02, 0xF2]),
+            "1200": bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x02, 0x00]),
+            "4800": bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x02, 0x01]),
+            "9600": bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x02, 0x02]),
             # Add more as needed
         }
         baud_command = baud_rate_commands.get(selected_baud_rate)
 
         # Set LED Mode
         if selected_led_mode == "Breathing Lamp":
-            led_command = bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x03, 0x00, 0xF1])
+            led_command = bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x03, 0x00])
         elif selected_led_mode == "Decoding Successful Prompt Light":
-            led_command = bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x03, 0x01, 0xF2])
+            led_command = bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x03, 0x01])
         else:
             messagebox.showerror("Configuration Error", "Invalid LED mode selected.")
             return
 
         # Set LED Brightness
         brightness_commands = {
-            "Low": bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x04, 0x00, 0xF3]),
-            "Middle": bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x04, 0x01, 0xF4]),
-            "High": bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x04, 0x02, 0xF5]),
+            "Low": bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x04, 0x00]),
+            "Middle": bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x04, 0x01]),
+            "High": bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x04, 0x02]),
         }
         brightness_command = brightness_commands.get(selected_led_brightness)
 
         # Set Color Mode
         color_commands = {
-            "Red": bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x05, 0x00, 0xF6]),
-            "Green": bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x05, 0x01, 0xF7]),
-            "Blue": bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x05, 0x02, 0xF8]),
+            "Red": bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x05, 0x00]),
+            "Green": bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x05, 0x01]),
+            "Blue": bytes([0x7E, 0x00, 0x08, 0x01, 0x00, 0x0B, 0x05, 0x02]),
         }
         color_command = color_commands.get(selected_color_mode)
 
